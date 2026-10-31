@@ -8,7 +8,7 @@ Build a reusable AI Agent Skill that analyzes Issues across GitHub repositories,
 
 - `main.py` and `llm_client.py`: preserve Week 1 LLM API integration work with Gemini.
 - `.agents/skills/issuepilot/SKILL.md`: main entry point for the Codex Agent Skill, invoked as `$issuepilot`.
-- `.agents/skills/issuepilot/scripts/`: GitHub API retrieval and repository version checks; currently contains `github_fetcher.py`. PR/commit retrieval and repository inspection are planned.
+- `.agents/skills/issuepilot/scripts/`: `github_fetcher.py`, `pr_fetcher.py`, and `commit_fetcher.py` retrieve Issue, PR, and commit metadata. Repository inspection and Skill tool integration are planned.
 - `.agents/skills/issuepilot/references/report_template.md`: Traditional Chinese RCA report template.
 - Codex: source-code analysis, RCA, and report generation; Python scripts provide supporting tools.
 
@@ -34,7 +34,7 @@ Build a reusable AI Agent Skill that analyzes Issues across GitHub repositories,
 ### Week 2 — Data Retrieval & Reliability (In Progress)
 
 - Day 6: GitHub Issue Fetcher (Completed).
-- Day 7: PR / commit metadata retrieval.
+- Day 7: PR / commit metadata retrieval (Completed).
 - Day 8: Repository Inspector for pre-fix source code.
 - Day 9: Integrate Python tools into the Skill workflow.
 - Day 10: End-to-end integration test.
@@ -58,11 +58,12 @@ Build a reusable AI Agent Skill that analyzes Issues across GitHub repositories,
 ## Current Progress
 
 - Week 1: Completed.
-- Week 2 Day 6: Completed. Next: Day 7 — PR / commit metadata retrieval (Not Started).
-- Implemented: Issue URL parsing, REST API retrieval, JSON output, missing/invalid URL handling, HTTP 404, rate-limit, and network-error handling.
-- Manual verification reported by the user: invalid URL, HTTP 404, and a valid Issue behaved as expected.
-- Automated verification: all 4 tests in `tests/test_github_fetcher.py` passed; mocked HTTP 403 rate limits and `URLError` cover exception propagation, CLI stderr, empty stdout, and exit code 1 without network access.
-- Automated coverage gaps: success/JSON output, missing/invalid URLs, HTTP 404/429, other HTTP errors, and malformed responses. These are follow-up coverage improvements, not completed tests.
+- Week 2 Days 6–7: Completed. Next: Day 8 — Repository Inspector (Not Started).
+- Implemented: generic Issue, PR, and commit URL parsing, REST API retrieval, JSON output, missing/invalid URL handling, HTTP 404, rate-limit, and network-error handling.
+- PR output: owner, repo, pr_number, title, state, merged, base_sha, head_sha. A PR base_sha is metadata, not a verified bug-reproduction version.
+- Commit output: sha, message, parent SHA list, author metadata; accepts full 40-character SHAs and uses `/git/commits/{sha}` without retrieving file diffs.
+- Automated verification: all 30 tests passed (4 Day 6, 26 Day 7), using mocks only. Day 7 covers parsing, successful JSON output, exception propagation, CLI errors and exit codes, HTTP 404/403/429, and network failures.
+- Coverage gaps: Day 6 success/URL/404/429 automation; malformed responses, authentication, retries, and live API integration. An existing Day 6 mock HTTPError can emit a ResourceWarning; those tests remain unchanged.
 - Test command: `.venv\Scripts\python.exe -m unittest discover -s tests -v`. Planned roadmap features remain unimplemented unless explicitly marked completed.
 
 ## Engineering Principles
@@ -77,4 +78,4 @@ Build a reusable AI Agent Skill that analyzes Issues across GitHub repositories,
 
 ## How to Resume
 
-Read this file and the current project files before continuing. Resume from Day 7 — PR / commit metadata retrieval. Day 6 is complete within its current scope; retain the documented test coverage gaps for follow-up. Follow the roadmap without treating planned features as completed. Check dependency compatibility before installing packages; change Python versions only for a concrete compatibility issue.
+Read this file and the current project files before continuing. Resume from Day 8 — Repository Inspector. Days 6–7 are complete within their current scope; retain the documented coverage gaps for follow-up. Tool integration remains scheduled for Day 9. Follow the roadmap without treating planned features as completed. Check dependency compatibility before installing packages; change Python versions only for a concrete compatibility issue.
