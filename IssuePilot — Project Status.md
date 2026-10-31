@@ -1,92 +1,80 @@
 # IssuePilot — Project Status
 
-## 1. Project Goal
+## Project Goal
 
-Build an AI-powered issue analysis assistant that accepts a real GitHub Issue, retrieves relevant pre-fix source code, analyzes the likely root cause with code evidence, and compares its diagnosis against the actual fix PR.
+Build a reusable AI Agent Skill that analyzes Issues across GitHub repositories, uses relevant source code and evidence to identify likely root causes, suggests fixes, and evaluates analysis results.
 
-Final goal: package the working analysis workflow as an AI Agent Skill or CLI command so a user can trigger the workflow with one command.
+## Architecture
 
-## 2. Target Users and Career Goal
+- `main.py` and `llm_client.py`: preserve Week 1 LLM API integration work with Gemini.
+- `.agents/skills/issuepilot/SKILL.md`: main entry point for the Codex Agent Skill, invoked as `$issuepilot`.
+- `.agents/skills/issuepilot/scripts/`: GitHub API retrieval and repository version checks; currently contains `github_fetcher.py`. PR/commit retrieval and repository inspection are planned.
+- `.agents/skills/issuepilot/references/report_template.md`: Traditional Chinese RCA report template.
+- Codex: source-code analysis, RCA, and report generation; Python scripts provide supporting tools.
 
-- Target roles: AI Application Engineer / AI Agent Engineer.
-- Purpose: demonstrate practical LLM integration, code retrieval, tool use, workflow orchestration, and evaluation.
-- Prior background: 2+ years of backend development, mainly Java and Spring Boot.
-- Project language: Python.
+## Environment
 
-## 3. Selected Case Study
+- OS / shell: Windows / PowerShell; editor: VS Code.
+- Project path: `C:\D\projects\issuepilot`.
+- Recorded Python version: 3.14.10; pip: 26.2.2.
+- Virtual environment: `.venv`; interpreter: `C:\D\projects\issuepilot\.venv\Scripts\python.exe`.
+- Agent runtime: Codex CLI; reusable project Skill: `$issuepilot`.
+- Direct virtual-environment Python execution works; activation previously encountered a PowerShell execution-policy restriction.
 
-- Repository: `langchain-ai/langchain`
-- Issue: https://github.com/langchain-ai/langchain/issues/38351
-- Related PR: https://github.com/langchain-ai/langchain/pull/38355
-- Important: verify issue details, repository versions, and the actual fix before implementation.
+## Development Roadmap
 
-## 4. Development Roadmap
+### Week 1 — LLM Integration & Skill Prototype (Completed)
 
-### Week 1 — LLM and Basic Analysis
-- Day 1: Set up Python, virtual environment, and VS Code.
-- Day 2: Make a successful LLM API call.
-- Day 3: Retrieve the GitHub Issue and pre-fix source code.
-- Day 4: Generate a root-cause analysis.
-- Day 5: Include code evidence and uncertainty in the output.
+- Day 1: Python environment setup.
+- Day 2: Gemini API integration.
+- Day 3: Codex CLI and repository exploration.
+- Day 4: Create and test the reusable `$issuepilot` Skill.
+- Day 5: Traditional Chinese RCA report with code evidence.
 
-### Week 2 — Code Retrieval and Reliability
-- Day 6: Implement basic source-code search.
-- Day 7: Improve retrieval relevance.
-- Day 8: Define structured analysis output.
-- Day 9: Handle failures and insufficient evidence.
-- Day 10: Complete an end-to-end analysis.
+### Week 2 — Data Retrieval & Reliability (In Progress)
 
-### Week 3 — Workflow, Agent, and Evaluation
-- Day 11: Structure the analysis workflow.
-- Day 12: Add controlled tool use, branching, and retries where useful.
-- Day 13: Compare the diagnosis with the actual fix PR.
-- Day 14: Define evaluation criteria.
-- Day 15: Review failures and limitations.
+- Day 6: GitHub Issue Fetcher.
+- Day 7: PR / commit metadata retrieval.
+- Day 8: Repository Inspector for pre-fix source code.
+- Day 9: Integrate Python tools into the Skill workflow.
+- Day 10: End-to-end integration test.
 
-### Week 4 — Skill and Demo
-- Day 16: Choose a compatible Agent CLI and Skill format.
-- Day 17: Package the workflow as a Skill.
-- Day 18: Run the workflow through one command.
-- Day 19: Prepare README, architecture, tests, and evaluation results.
-- Day 20: Complete the demo and interview presentation.
+### Week 3 — Agent Workflow & Evaluation (Not Started)
 
-The schedule is flexible. Prioritize a working, evaluated core over completing every optional feature.
+- Day 11: Improve workflow and source-code retrieval.
+- Day 12: Error recovery, branching, retries, and insufficient evidence.
+- Day 13: Compare RCA against the actual fix PR.
+- Day 14: Define evaluation criteria and test cases.
+- Day 15: Failure analysis and limitations.
 
-## 5. Current Environment
+### Week 4 — Packaging & Demo (Not Started)
 
-- OS: Windows
-- Project directory: `C:\D\projects\issuepilot`
-- Python: 3.14.10
-- pip: 26.2.2
-- Virtual environment: `C:\D\projects\issuepilot\.venv`
-- Editor: VS Code
-- Python extension: installed
-- `main.py`: created and successfully executed
-- Verified interpreter: `C:\D\projects\issuepilot\.venv\Scripts\python.exe`
-- PowerShell activation initially encountered an execution-policy restriction; direct virtual-environment Python execution works.
+- Day 16: Refine Skill packaging and installation.
+- Day 17: Automated tests and error scenarios.
+- Day 18: Cross-repository validation.
+- Day 19: README, architecture, and evaluation documentation.
+- Day 20: Demo and interview presentation.
 
-Note: check package compatibility before installing dependencies. Do not change Python versions unless a concrete compatibility issue requires it.
+## Current Progress
 
-## 6. Current Progress
+- Week 1: Completed.
+- Week 2 Day 6: In Progress.
+- Completed: GitHub Issue URL parsing, REST API retrieval, JSON output, and missing URL handling.
+- Current step: Day 6 Step 4.2 — Invalid URL handling.
+- The parser raises `ValueError` for invalid URLs; user-friendly CLI error handling is not yet implemented.
+- Remaining Day 6 tasks: finish invalid URL handling, handle HTTP 404, rate limits, and network errors, then perform final testing.
+- Roadmap statuses reflect the current development record; planned features are not completed capabilities.
 
-- [x] Day 1: Environment setup and `hello world` test.
-- [ ] Day 2: LLM API call.
-- [ ] Day 3: Retrieve Issue and source code.
-- [ ] Day 4: Root-cause analysis.
-- [ ] Day 5: Evidence-backed output.
+## Engineering Principles
 
-Current stopping point: Day 1 is complete. Day 2 has not started. The next task is to choose an LLM API provider and make the first API call.
+- Develop incrementally and verify each step.
+- Keep reports in Traditional Chinese while preserving code identifiers.
+- Separate verified evidence from hypotheses; never invent evidence or evaluation results.
+- Do not inspect the actual fix PR before completing the initial RCA.
+- Keep API keys out of Git; never read or expose `.env` contents.
+- Preserve both LLM API integration and Agent Skill development work.
+- Keep IssuePilot generic; do not hard-code a specific repository, Issue, fix PR, or commit as a dependency.
 
-## 7. Engineering Principles
+## How to Resume
 
-- Build incrementally; do not implement the entire system at once.
-- Prefer concrete code and verifiable results.
-- Keep API keys out of source code and Git.
-- Avoid unnecessary frameworks until they solve a real problem.
-- Do not invent evaluation metrics or claim unverified accuracy.
-- Treat the Skill as the entry point; Python scripts and APIs can provide the underlying capabilities.
-- Verify real repository and PR content before drawing conclusions.
-
-## 8. How to Resume
-
-At the beginning of a new chat, provide this file and ask the assistant to continue IssuePilot from the current progress. Update this document when the roadmap, architecture, environment, or current milestone changes.
+Read this file and the current project files before continuing. Resume from Day 6 Step 4.2 — Invalid URL handling. Follow the roadmap without treating planned features as completed. Check dependency compatibility before installing packages; change Python versions only for a concrete compatibility issue.
