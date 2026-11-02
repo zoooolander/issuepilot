@@ -27,11 +27,13 @@ spec.loader.exec_module(github_fetcher)
 def rate_limit_error():
     headers = Message()
     headers["X-RateLimit-Remaining"] = "0"
-    return HTTPError(API_URL, 403, "Forbidden", headers, None)
+    return HTTPError(API_URL, 403, "Forbidden", headers, io.BytesIO())
 
 
 class FetchIssueErrorTests(unittest.TestCase):
     def assert_error_propagates(self, error):
+        if isinstance(error, HTTPError):
+            self.addCleanup(error.close)
         with patch("urllib.request.urlopen", side_effect=error) as urlopen:
             with self.assertRaises(type(error)) as caught:
                 github_fetcher.fetch_issue("example", "project", 123)
@@ -52,6 +54,8 @@ class FetchIssueErrorTests(unittest.TestCase):
 
 class CliErrorTests(unittest.TestCase):
     def assert_cli_error(self, error, expected_message):
+        if isinstance(error, HTTPError):
+            self.addCleanup(error.close)
         stdout = io.StringIO()
         stderr = io.StringIO()
         # Execute the real __main__ block in-process so urlopen stays mocked.
