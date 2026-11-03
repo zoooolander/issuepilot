@@ -10,7 +10,7 @@ Extend this analysis foundation into an AI Bug Fixing Agent within the existing 
 
 - `main.py` and `llm_client.py`: preserve Week 1 LLM API integration work with Gemini.
 - `.agents/skills/issuepilot/SKILL.md`: main entry point for the Codex Agent Skill, invoked as `$issuepilot`.
-- `.agents/skills/issuepilot/scripts/`: three fetchers retrieve Issue, PR, and commit metadata; `repo_inspector.py` reads regular UTF-8 files at explicit local commits. Skill tool integration is planned.
+- `.agents/skills/issuepilot/scripts/`: three fetchers retrieve Issue, PR, and commit metadata; `version_selector.py` checks current HEAD and dirty state; `repo_inspector.py` reads/searches fixed-commit UTF-8 files with directory scope and bounded budgets. Skill tool integration is complete.
 - `.agents/skills/issuepilot/references/report_template.md`: Traditional Chinese RCA report template.
 - Codex: source-code analysis, RCA, and report generation; Python scripts provide supporting tools.
 - Planned extension: requirement-gap detection, user clarification, an explicit approval gate, scoped code changes, test execution, and fix verification. Human approval is required before modifying the target repository.
@@ -41,7 +41,7 @@ Keep all Day 1–8 deliverables. Increase daily scope where needed without addin
 - Day 5: Traditional Chinese RCA report with code evidence.
   Output: structured Traditional Chinese RCA report. Done when it follows the template, references code evidence, and distinguishes uncertainty.
 
-### Week 2 — Data Retrieval & Reliability (In Progress)
+### Week 2 — Data Retrieval & Reliability (Completed)
 
 - Day 6: GitHub Issue Fetcher (Completed).
   Output: `github_fetcher.py` and tests. Done when Issue JSON retrieval and documented CLI error handling pass the recorded manual and automated checks.
@@ -49,12 +49,12 @@ Keep all Day 1–8 deliverables. Increase daily scope where needed without addin
   Output: PR/commit fetchers and tests. Done when metadata-only output, URL parsing, and CLI success/error scenarios pass mocked tests.
 - Day 8: Repository Inspector for explicit source-code versions (Completed; bug reproduction is not verified).
   Output: read-only `repo_inspector.py` and tests. Done when file/commit validation, text retrieval, CLI errors, and repository-preservation checks pass.
-- Day 9: Skill Integration + Source Retrieval + Version Selection. Output: integrated read-only workflow and recorded repository/commit selection. Done when the Skill retrieves Issue data and relevant source at an explicit SHA, records selection evidence and uncertainty, and excludes actual fix PR content from initial RCA.
-- Day 10: RCA End-to-End Testing + Analysis MVP. Output: reproducible Issue-to-RCA run and report. Done when the integrated workflow produces a Traditional Chinese report with source paths, line numbers, SHA, hypotheses, and limitations, without modifying the target repository or reading the actual fix PR.
+- Day 9: Skill Integration + Source Retrieval + Version Selection (Completed). Output: integrated read-only workflow and recorded repository/commit selection. Done when the Skill retrieves Issue data and relevant source at an explicit SHA, records selection evidence and uncertainty, and excludes actual fix PR content from initial RCA.
+- Day 10: RCA End-to-End Testing + Analysis MVP (Completed). Output: reproducible Issue-to-RCA run and report. Done when the integrated workflow produces a Traditional Chinese report with source paths, line numbers, SHA, hypotheses, and limitations, without modifying the target repository or reading the actual fix PR.
 
 ### Week 3 — Bug Fixing Workflow & Evaluation (Not Started)
 
-- Day 11: Fix Planning + Requirement Gap Detection. Output: proposed fix scope, acceptance criteria, risks, and open questions. Done when unsupported assumptions and unclear requirements are explicitly identified before implementation.
+- Day 11: Fix Planning + Domain Understanding + Requirement Gap Detection. Output: proposed fix scope, acceptance criteria, risks, and open questions. Done when unsupported assumptions and unclear requirements are explicitly identified before implementation.
   First independently research repository documentation, source code, tests, and Issue discussions to understand the domain and expected behavior. Ask the Engineer only about gaps that remain unsupported by evidence or require a business decision; do not delegate researchable questions to the Engineer.
 - Day 12: User Clarification + Approval Gate. Output: clarification dialogue and explicit approval of a concrete fix plan. Done when ambiguous requirements trigger questions, absent/denied approval blocks target-repository changes, and a changed plan requires renewed approval.
   Implement human-in-the-loop with specific, contextual domain questions that explain the evidence, unresolved ambiguity, and impact on the fix. Update the plan using the Engineer's answers and obtain explicit authorization for that plan before modifying code.
@@ -74,13 +74,23 @@ Keep all Day 1–8 deliverables. Increase daily scope where needed without addin
 ## Current Progress
 
 - Week 1: Completed.
-- Days 1–8: Completed. Next: Day 9 — Skill Integration + Source Retrieval + Version Selection (Not Started). Analysis MVP targets Day 10; Bug Fixing MVP targets Day 14.
+- Days 1–8: Completed; all existing deliverables retained. Days 9–10: Completed; Analysis MVP accepted. Next: Day 11 — Fix Planning + Domain Understanding + Requirement Gap Detection (Not Started). Bug Fixing MVP remains scheduled for Day 14.
 - Implemented: generic Issue, PR, and commit URL parsing, REST API retrieval, JSON output, missing/invalid URL handling, HTTP 404, rate-limit, and network-error handling.
 - PR output: owner, repo, pr_number, title, state, merged, base_sha, head_sha. A PR base_sha is metadata, not a verified bug-reproduction version.
 - Commit output: sha, message, parent SHA list, author metadata; accepts full 40-character SHAs and uses `/git/commits/{sha}` without retrieving file diffs.
 - Repository Inspector: read-only Git argument arrays validate repository, full SHA-1/SHA-256 commit IDs, root-relative POSIX paths, regular-file modes, and UTF-8 text; no checkout/reset/fetch. The selected commit is not a verified bug version.
 - Automated verification: all 52 tests passed (4 Day 6, 26 Day 7, 22 Day 8). Fetchers use mocks; Inspector uses an isolated Git fixture plus mocked execution failures, checking repository content remains unchanged after every test.
-- Coverage gaps: Day 6 success/URL/404/429 automation; malformed API responses, authentication/retries, live API integration, bare/worktree/SHA-256 repositories, partial clones, and large files. An existing Day 6 mock HTTPError can emit a ResourceWarning.
+- Day 9 Step 1 — Skill Integration: documented real tool CLI inputs/outputs, read-only analysis, disclosure limits, and authorized report destinations.
+- Day 9 Step 2 — Source Retrieval: fixed-SHA listing, filename/text search, line evidence, sensitive-file exclusions, and bounded results; exact-path reads remain available.
+- Day 9 Step 3 — Version Selection: default to the Engineer's current HEAD; report staged/unstaged/untracked changes and require confirmation before analyzing HEAD when dirty. HEAD is not a verified bug version.
+- Day 9 Step 4 — Structured RCA Output: preserved seven Traditional Chinese sections with version/workspace provenance, expected/actual behavior, evidence, confidence, reproduction status, Technical Unknowns, and Domain Decisions.
+- Day 9 integration acceptance: all four steps exercised in the real Issue-to-RCA workflow; initial analysis did not inspect the actual fix PR or modify target source code.
+- Day 10 acceptance: real Issue RCA completed and saved at `reports/issue-38351-analysis.md`; the report retains its original analysis and adds a separate follow-up acceptance record. The case is validation evidence, not a hard-coded tool dependency.
+- Day 10 retrieval fix: unrelated filenames no longer consume candidate-content budget; directory scope, separate metadata/content limits, completion state, stop reasons, and regression tests are implemented.
+- Follow-up search acceptance (Engineer-reported): same LangChain SHA `5893459c4f2bfac6c8d3262cae1e3f2246d9287f`, scope `libs/langchain_v1/langchain/agents`; two `_make_model_to_tools_edge` matches in `factory.py`, `complete=true`, `scan_truncated=false`. This was tool revalidation, not a complete RCA rerun.
+- Latest automated verification: Inspector 47/47 and full unittest 96/96 passed (4 Issue, 13 PR, 13 commit, 47 Inspector, 19 Version Selector), without warning suppression. The Day 6 mock HTTPError resource-cleanup issue was fixed.
+- Limitation: the LangChain Bug has not been reproduced; RCA remains static analysis, with runtime reproduction marked unverified. The Issue itself disclosed diagnosis/fix suggestions, so this case is not an independent blind evaluation; no actual fix PR was inspected.
+- Remaining coverage/operational limits: Day 6 success/URL/404/429 automation; malformed API responses, authentication/retries, generalized live API integration, linked-worktree/SHA-256 repositories, partial clones, and very large files. Metadata is captured for the selected scope before its processing cap; scoped search is not unrestricted whole-repository coverage. Bare working-tree selection is intentionally rejected.
 - Test command: `.venv\Scripts\python.exe -m unittest discover -s tests -v`. Planned roadmap features remain unimplemented unless explicitly marked completed.
 
 ## Engineering Principles
@@ -98,4 +108,4 @@ Keep all Day 1–8 deliverables. Increase daily scope where needed without addin
 
 ## How to Resume
 
-Read this file and the current project files before continuing. Days 1–8 are Completed; Day 9 — Skill Integration + Source Retrieval + Version Selection is Not Started. Begin with read-only integration and explicit version selection; retain all existing deliverables, the 52-test record, and documented coverage gaps. Keep the initial RCA free of actual-fix PR content. Later fixing stages must clarify requirements, obtain explicit approval before target-repository edits, and preserve user changes. Follow the 20-day roadmap without treating planned features as completed. Check dependency compatibility before installing packages; change Python versions only for a concrete compatibility issue.
+Read this file, the current project files, and the saved RCA with its follow-up acceptance record before continuing. Days 1–10 are Completed; resume at Day 11 — Fix Planning + Domain Understanding + Requirement Gap Detection (Not Started). Research domain behavior through documents, source, tests, and Issue discussion before raising Engineer decisions. Preserve all prior deliverables, the historical 52-test record, and the latest Inspector 47/47 and full-suite 96/96 results. LangChain Bug reproduction remains unverified; do not turn static analysis or tool acceptance into runtime/fix claims. Keep initial RCA independent of the actual fix PR. Later target-repository edits require an explicitly authorized concrete plan and protection of user changes. Follow the unchanged four-week, 20-day schedule. Check dependency compatibility before installing packages; change Python versions only for a concrete compatibility issue.

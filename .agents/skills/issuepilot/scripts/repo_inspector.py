@@ -12,6 +12,7 @@ import sys
 MAX_FILE_BYTES = 1024 * 1024
 MAX_SCAN_BYTES = 10 * MAX_FILE_BYTES
 MAX_SCAN_FILES = 2000
+MAX_METADATA_ENTRIES = 20000
 MAX_LINE_CHARS = 300
 
 
@@ -128,8 +129,36 @@ def _line_matches(path, text, query):
                "content_truncated": len(line) > MAX_LINE_CHARS}
 
 
+def _validate_scope(scope):
+    if scope in ("", "."):
+        return ""
+    if (not isinstance(scope, str) or scope.startswith("/")
+            or PureWindowsPath(scope).drive or "\\" in scope or ":" in scope
+            or any(ord(c) < 32 or ord(c) == 127 for c in scope)):
+        raise ValueError("Invalid scope: use a repository-relative directory.")
+    scope = scope.removesuffix("/")
+    if any(part in ("", ".", "..") for part in scope.split("/")):
+        raise ValueError("Invalid scope: use a repository-relative directory without traversal.")
+    if _is_sensitive(scope):
+        raise ValueError("Sensitive search scopes are excluded.")
+    return scope
+
+
+def _finish_search(result, diagnostics, max_output_chars, reason=None):
+    result["stop_reason"] = reason
+    result["complete"] = reason is None
+    result["truncated"] = reason in ("result_limit", "output_limit")
+    result["scan_truncated"] = reason in ("metadata_limit", "candidate_limit", "byte_limit")
+    # Keep the old 256-character minimum output budget usable. Diagnostics are
+    # optional; completion/reason and the legacy flags are always present.
+    result["diagnostics"] = diagnostics
+    if len(json.dumps(result, ensure_ascii=True)) + 1 > max_output_chars:
+        del result["diagnostics"]
+    return result
+
+
 def _search_at_commit(repo_path, commit_sha, filename_query, text_query,
-                      max_results, max_output_chars):
+                      max_results, max_output_chars, scope=""):
     _validate_query(filename_query, allow_empty=True)
     if text_query is not None:
         _validate_query(text_query)
@@ -137,47 +166,70 @@ def _search_at_commit(repo_path, commit_sha, filename_query, text_query,
         raise ValueError("max_results must be an integer from 1 to 200.")
     if type(max_output_chars) is not int or not 256 <= max_output_chars <= 50000:
         raise ValueError("max_output_chars must be an integer from 256 to 50000.")
+    scope = _validate_scope(scope)
     repo = _validate_repository_commit(repo_path, commit_sha)
     result = {"commit_sha": commit_sha, "results": [], "truncated": False,
-              "scan_truncated": False, "skipped_files": 0}
+              "scan_truncated": False, "skipped_files": 0,
+              "complete": False, "stop_reason": "output_limit"}
+    diagnostics = {"scope": scope, "metadata_entries": 0, "candidate_files": 0,
+                   "bytes_read": 0, "skipped_reasons": {}}
+
+    def skip(reason):
+        result["skipped_files"] += 1
+        reasons = diagnostics["skipped_reasons"]
+        reasons[reason] = reasons.get(reason, 0) + 1
+
+    if scope:
+        entry = _run_git(repo, "ls-tree", "--full-tree", "-z", commit_sha, "--", scope)
+        if not entry:
+            raise FileNotFoundError("Search scope not found at the specified commit.")
+        if entry.split(b"\t", 1)[0].split()[:2] != [b"040000", b"tree"]:
+            raise ValueError("Search scope must be a directory, not a file, symlink or submodule.")
     # -l provides blob sizes before reading; -z keeps spaces/tabs in paths unambiguous.
-    entries = _run_git(repo, "ls-tree", "--full-tree", "-r", "-l", "-z", commit_sha)
-    scanned = total_bytes = 0
+    # Restrict the Git tree traversal itself, rather than filtering a global list.
+    tree_args = ("--", scope + "/") if scope else ()
+    entries = _run_git(repo, "ls-tree", "--full-tree", "-r", "-l", "-z", commit_sha, *tree_args)
     for entry in entries.split(b"\0"):
         if not entry:
             continue
-        if scanned >= MAX_SCAN_FILES:
-            result["scan_truncated"] = True
-            break
-        scanned += 1
+        if diagnostics["metadata_entries"] >= MAX_METADATA_ENTRIES:
+            return _finish_search(result, diagnostics, max_output_chars, "metadata_limit")
+        diagnostics["metadata_entries"] += 1
         metadata, path_bytes = entry.split(b"\t", 1)
         mode, object_type, object_sha, size = metadata.split()
         try:
             path = path_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            result["skipped_files"] += 1
+            skip("invalid_path_encoding")
             continue
-        if (mode not in (b"100644", b"100755") or object_type != b"blob"
-                or _is_sensitive(path) or any(ord(c) < 32 or ord(c) == 127 for c in path)
-                or "\\" in path or ":" in path):
-            result["skipped_files"] += 1
-            continue
+        # Unrelated names consume metadata budget, never content budget.
         if filename_query not in path:
+            continue
+        if mode not in (b"100644", b"100755") or object_type != b"blob":
+            skip("non_regular")
+            continue
+        if _is_sensitive(path):
+            skip("sensitive_path")
+            continue
+        if any(ord(c) < 32 or ord(c) == 127 for c in path) or "\\" in path or ":" in path:
+            skip("unsupported_path")
             continue
         size = int(size)
         if size > MAX_FILE_BYTES:
-            result["skipped_files"] += 1
+            skip("file_size")
             continue
-        if total_bytes + size > MAX_SCAN_BYTES:
-            result["scan_truncated"] = True
-            break
-        total_bytes += size
+        if diagnostics["candidate_files"] >= MAX_SCAN_FILES:
+            return _finish_search(result, diagnostics, max_output_chars, "candidate_limit")
+        if diagnostics["bytes_read"] + size > MAX_SCAN_BYTES:
+            return _finish_search(result, diagnostics, max_output_chars, "byte_limit")
+        diagnostics["candidate_files"] += 1
+        diagnostics["bytes_read"] += size
         # Read blobs directly: no checkout, filters, external diff, or symlink following.
         content = _run_git(repo, "cat-file", "blob", object_sha.decode("ascii"))
         try:
             text = _decode_text(content)
         except ValueError:
-            result["skipped_files"] += 1
+            skip("non_text")
             continue
         if text_query is None:
             matches = [{"path": path}]
@@ -185,30 +237,28 @@ def _search_at_commit(repo_path, commit_sha, filename_query, text_query,
             matches = _line_matches(path, text, text_query)
         for match in matches:
             if len(result["results"]) >= max_results:
-                result["truncated"] = True
-                return result
+                return _finish_search(result, diagnostics, max_output_chars, "result_limit")
             result["results"].append(match)
             # ASCII JSON makes the output budget deterministic across terminals.
-            if len(json.dumps(result, ensure_ascii=True)) + 64 > max_output_chars:
+            if len(json.dumps(result, ensure_ascii=True)) + 32 > max_output_chars:
                 result["results"].pop()
-                result["truncated"] = True
-                return result
-    return result
+                return _finish_search(result, diagnostics, max_output_chars, "output_limit")
+    return _finish_search(result, diagnostics, max_output_chars)
 
 
 def list_files_at_commit(repo_path, commit_sha, filename_query="", *,
-                         max_results=50, max_output_chars=20000):
+                         max_results=50, max_output_chars=20000, scope=""):
     """List safe UTF-8 files; optional literal, case-sensitive path substring."""
     return _search_at_commit(repo_path, commit_sha, filename_query, None,
-                             max_results, max_output_chars)
+                             max_results, max_output_chars, scope)
 
 
 def search_code_at_commit(repo_path, commit_sha, query, *, filename_query="",
-                          max_results=50, max_output_chars=20000):
+                          max_results=50, max_output_chars=20000, scope=""):
     """Search literal case-sensitive text at SHA; line numbers are one-based."""
     _validate_query(query)
     return _search_at_commit(repo_path, commit_sha, filename_query, query,
-                             max_results, max_output_chars)
+                             max_results, max_output_chars, scope)
 
 
 if __name__ == "__main__":
@@ -225,10 +275,11 @@ if __name__ == "__main__":
             parser.add_argument("repo_path")
             parser.add_argument("commit_sha")
             parser.add_argument("--name", default="", help="Literal path substring")
+            parser.add_argument("--scope", default="", help="Repository-relative directory at SHA")
             parser.add_argument("--limit", type=int, default=50)
             parser.add_argument("--max-output-chars", type=int, default=20000)
             args = parser.parse_args()
-            options = {"filename_query": args.name, "max_results": args.limit,
+            options = {"filename_query": args.name, "scope": args.scope, "max_results": args.limit,
                        "max_output_chars": args.max_output_chars}
             if args.list_files:
                 result = list_files_at_commit(args.repo_path, args.commit_sha, **options)

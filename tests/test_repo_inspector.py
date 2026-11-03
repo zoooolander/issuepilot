@@ -63,6 +63,15 @@ class RepositoryTests(unittest.TestCase):
         cls.git("add", "src/example.py", "new-file.txt")
         cls.git("commit", "-qm", "Newer fixture version")
         cls.newer_sha = cls.git("rev-parse", "HEAD").decode().strip()
+        # A large committed tree without thousands of worktree files/processes.
+        subtree = cls.git("mktree", data=(
+            f"100644 blob {cls.blob}\tscoped.py\n".encode())).decode().strip()
+        records = [f"100644 blob {cls.blob}\ta{i:04d}.txt\n" for i in range(2005)]
+        records += [f"100644 blob {cls.blob}\tz-target.py\n",
+                    f"040000 tree {subtree}\tzzscope\n",
+                    f"100644 blob {cls.blob}\tzzscope-other.py\n"]
+        large_tree = cls.git("mktree", data="".join(records).encode()).decode().strip()
+        cls.large_sha = cls.git("commit-tree", large_tree, "-m", "Large search fixture").decode().strip()
         # Leave staged, unstaged, and untracked data that must survive all reads.
         (cls.repo / "src/example.py").write_bytes(b"staged version\n")
         cls.git("add", "src/example.py")
@@ -417,6 +426,126 @@ class RepositoryTests(unittest.TestCase):
             self.assertNotEqual(code, 0)
             self.assertEqual(stdout, "")
             self.assertTrue(stderr)
+
+    def test_late_name_match_does_not_consume_unrelated_content_budget(self):
+        with patch.object(inspector, "MAX_SCAN_FILES", 1):
+            for fn, args in [(inspector.list_files_at_commit, ()),
+                             (inspector.search_code_at_commit, ("historical",))]:
+                result = fn(self.repo, self.large_sha, *args, filename_query="z-target.py")
+                self.assertEqual(result["results"][0]["path"], "z-target.py")
+                self.assertTrue(result["complete"])
+                self.assertIsNone(result["stop_reason"])
+                self.assertFalse(result["scan_truncated"])
+                self.assertEqual(result["diagnostics"]["candidate_files"], 1)
+                self.assertGreater(result["diagnostics"]["metadata_entries"], 2000)
+
+    def test_scope_prunes_git_tree_and_uses_root_relative_paths(self):
+        original = inspector._run_git
+        with patch.object(inspector, "MAX_METADATA_ENTRIES", 1):
+            with patch.object(inspector, "_run_git", wraps=original) as run:
+                result = inspector.search_code_at_commit(
+                    self.repo / "src", self.large_sha, "historical", scope="zzscope/")
+        self.assertTrue(result["complete"])
+        self.assertEqual([m["path"] for m in result["results"]], ["zzscope/scoped.py"])
+        self.assertEqual(result["results"][0]["line_number"], 2)
+        self.assertEqual(result["diagnostics"]["metadata_entries"], 1)
+        recursive = [call.args for call in run.call_args_list if "-r" in call.args]
+        self.assertEqual(recursive[0][-2:], ("--", "zzscope/"))
+        self.assertEqual(inspector.list_files_at_commit(
+            self.repo, self.large_sha, scope="zzscope")["results"],
+            [{"path": "zzscope/scoped.py"}])
+
+    def test_scope_validation_and_sensitive_scopes(self):
+        for scope in ["/tmp", "../src", "src/../src", "C:/src", "C:src", "src\\a",
+                      "src//a", "src/./a", "src\x00", ":(glob)*", None, ".aws", ".env"]:
+            with self.subTest(scope=scope), patch.object(inspector, "_run_git") as run:
+                with self.assertRaises(ValueError):
+                    inspector.list_files_at_commit(self.repo, self.sha, scope=scope)
+                run.assert_not_called()
+        for scope in ["empty.txt", "link", "submodule"]:
+            with self.subTest(scope=scope), self.assertRaisesRegex(ValueError, "directory"):
+                inspector.list_files_at_commit(self.repo, self.submodule_sha, scope=scope)
+        with self.assertRaisesRegex(FileNotFoundError, "scope not found"):
+            inspector.list_files_at_commit(self.repo, self.sha, scope="missing")
+
+    def test_scoped_search_keeps_version_and_literal_name_semantics(self):
+        self.assertEqual(inspector.search_code_at_commit(
+            self.repo, self.sha, "newer commit only", scope="src")["results"], [])
+        self.assertTrue(inspector.search_code_at_commit(
+            self.repo, self.newer_sha, "newer commit only", scope="src")["results"])
+        result = inspector.list_files_at_commit(self.repo, self.sha, "*.py", scope="src")
+        self.assertEqual(result["results"], [])
+        self.assertTrue(result["complete"])
+        self.assertEqual(inspector.list_files_at_commit(
+            self.repo, self.sha, scope=".")["results"],
+            inspector.list_files_at_commit(self.repo, self.sha)["results"])
+
+    def test_metadata_and_candidate_limit_reasons(self):
+        with patch.object(inspector, "MAX_METADATA_ENTRIES", 2000):
+            result = inspector.search_code_at_commit(
+                self.repo, self.large_sha, "historical", filename_query="z-target.py")
+        self.assertEqual(result["results"], [])
+        self.assertEqual(result["stop_reason"], "metadata_limit")
+        self.assertFalse(result["complete"])
+        self.assertTrue(result["scan_truncated"])
+        self.assertFalse(result["truncated"])
+        self.assertEqual(result["diagnostics"]["metadata_entries"], 2000)
+        with patch.object(inspector, "MAX_SCAN_FILES", 1):
+            partial = inspector.search_code_at_commit(self.repo, self.large_sha, "absent")
+            exact = inspector.search_code_at_commit(self.repo, self.sha, "absent", scope="src")
+        self.assertEqual(partial["stop_reason"], "candidate_limit")
+        self.assertEqual(partial["diagnostics"]["candidate_files"], 1)
+        self.assertTrue(exact["complete"])
+
+    def test_byte_limit_boundary_and_skip_diagnostics(self):
+        size = len(self.text.encode("utf-8"))
+        with patch.object(inspector, "MAX_SCAN_BYTES", size):
+            exact = inspector.search_code_at_commit(self.repo, self.sha, "absent", scope="src")
+        self.assertTrue(exact["complete"])
+        self.assertEqual(exact["diagnostics"]["bytes_read"], size)
+        with patch.object(inspector, "MAX_SCAN_BYTES", size - 1):
+            partial = inspector.search_code_at_commit(self.repo, self.sha, "absent", scope="src")
+        self.assertEqual(partial["stop_reason"], "byte_limit")
+        self.assertEqual(partial["diagnostics"]["bytes_read"], 0)
+        result = inspector.list_files_at_commit(self.repo, self.submodule_sha)
+        reasons = result["diagnostics"]["skipped_reasons"]
+        self.assertEqual(reasons["sensitive_path"], 2)
+        self.assertEqual(reasons["non_regular"], 2)
+        self.assertEqual(reasons["non_text"], 2)
+        self.assertEqual(sum(reasons.values()), result["skipped_files"])
+        self.assertEqual(inspector.list_files_at_commit(
+            self.repo, self.sha, "example.py")["skipped_files"], 0)
+
+    def test_result_and_output_limit_reasons(self):
+        limited = inspector.search_code_at_commit(
+            self.repo, self.sha, "needle", filename_query="matches.txt", max_results=1)
+        self.assertEqual(limited["stop_reason"], "result_limit")
+        self.assertFalse(limited["complete"])
+        self.assertTrue(limited["truncated"])
+        self.assertFalse(limited["scan_truncated"])
+        tiny = inspector.search_code_at_commit(self.repo, self.sha, "needle", max_output_chars=256)
+        self.assertEqual(tiny["stop_reason"], "output_limit")
+        self.assertLessEqual(len(json.dumps(tiny)) + 1, 256)
+        self.assertNotIn("diagnostics", tiny)
+        empty = inspector.search_code_at_commit(
+            self.repo, self.sha, "absent", scope="src", max_output_chars=256)
+        self.assertTrue(empty["complete"])
+        self.assertIsNone(empty["stop_reason"])
+        self.assertLessEqual(len(json.dumps(empty)) + 1, 256)
+
+    def test_scoped_cli_and_invalid_scope(self):
+        code, stdout, stderr = self.run_cli([
+            "--search-code", "historical", str(self.repo), self.large_sha, "--scope", "zzscope"])
+        self.assertEqual((code, stderr), (0, ""))
+        self.assertTrue(json.loads(stdout)["complete"])
+        self.assertEqual(json.loads(stdout)["results"][0]["path"], "zzscope/scoped.py")
+        for scope in ["../src", "missing", "link"]:
+            code, stdout, stderr = self.run_cli([
+                "--list-files", str(self.repo), self.sha, "--scope", scope])
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertTrue(stderr.startswith("Error: "))
+            self.assertNotIn("Traceback", stderr)
 
 
 if __name__ == "__main__":
