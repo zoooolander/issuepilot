@@ -160,7 +160,7 @@ Inspector 最終相關檔案讀取成功，退出碼為 `0`。初次讀取曾遇
 - 搜尋線索：`_make_model_to_tools_edge`；成功找到 `factory.py` 中兩筆相關結果。
 - 搜尋結果：`complete=true`、`scan_truncated=false`，此 Scope 的搜尋未發生截斷。
 - 工具測試紀錄：Inspector 47/47、完整 unittest 96/96 通過；這些是 IssuePilot 工具測試，不是 LangChain Bug 重現測試。
-- 報告目前已存檔於 `reports/issue-38351-analysis.md`；以上「未儲存／僅呈現於對話」的文字是首輪報告產生時的狀態。
+- 報告目前已存檔於 `reports/issue-38351/issue-38351-analysis.md`；以上「未儲存／僅呈現於對話」的文字是首輪報告產生時的狀態。
 - RCA 仍屬靜態分析，LangChain Bug 尚未實際重現，重現狀態維持「未驗證」。
 
 這是後續工具驗收紀錄，不代表重新執行完整 RCA，也不代表 LangChain Bug 已修復或修復方案已套用。Day 10 依原定 Analysis MVP 標準驗收通過，不等於執行期根因或修復結果已驗證。
