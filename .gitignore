@@ -6,3 +6,13 @@ __pycache__/
 *.pyc
 .vscode/
 SESSION_HANDOFF.md
+
+# Local reproduction environments, package caches and temporary build files
+reproductions/**/.pip-cache/
+reproductions/**/.uv-cache*/
+reproductions/**/.tmp*/
+reports/.uv-cache*/
+reports/.tmp*/
+
+# Verbose installation logs remain local; retain CK01 execution evidence
+reproductions/**/install-*.log

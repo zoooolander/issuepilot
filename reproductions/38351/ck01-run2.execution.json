@@ -1,0 +1,11 @@
+{
+  "command": [
+    "C:\\D\\projects\\issuepilot\\reproductions\\38351\\.venv\\Scripts\\python.exe",
+    "-B",
+    "C:\\D\\projects\\issuepilot\\reproductions\\38351\\reproduce_38351.py"
+  ],
+  "cwd": "C:\\D\\projects\\issuepilot",
+  "exit_code": 1,
+  "encoding": "utf-8",
+  "purpose": "Repeat identical CK01 to capture raw output without PowerShell stream formatting"
+}
